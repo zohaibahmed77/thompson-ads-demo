@@ -15,13 +15,14 @@
     <!-- Recharts (UMD) -->
     <script src="https://unpkg.com/recharts/umd/Recharts.min.js"></script>
 
-    <!-- Babel (so we can author in JSX with no build step) -->
+    <!-- Babel (so we can write JSX directly in browser) -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   </head>
   <body class="bg-gray-50">
     <div id="root"></div>
 
-    <script type="text/babel">
+    <!-- Your app code -->
+    <script type="text/babel" data-presets="react">
       const { useMemo, useState } = React;
       const {
         LineChart, Line, XAxis, YAxis, Tooltip, Legend,
@@ -62,7 +63,6 @@
       function formatPct(x) {
         return `${(x * 100).toFixed(1)}%`;
       }
-
       function clamp01(x) {
         if (Number.isNaN(x)) return 0;
         return Math.max(0, Math.min(1, x));
@@ -88,7 +88,6 @@
             truthBuy:   [0.02, 0.01, 0.05][i],
           }))
         );
-
         const [valueClick, setValueClick] = useState(1);
         const [valueBuy, setValueBuy] = useState(3);
         const [round, setRound] = useState(0);
@@ -102,8 +101,7 @@
         );
 
         const nextAdIndex = useMemo(() => {
-          let bestIndex = 0;
-          let bestScore = -Infinity;
+          let bestIndex = 0, bestScore = -Infinity;
           ads.forEach((ad, idx) => {
             const pClick = sampleBeta(ad.alphaC, ad.betaC);
             const pBuy = sampleBeta(ad.alphaB, ad.betaB);
@@ -113,29 +111,13 @@
           return bestIndex;
         }, [ads, valueClick, valueBuy, round]);
 
-        function pushHistory(newAds, idx, outcome, newCum) {
-          const meanClicks = newAds.map((a) => a.alphaC / (a.alphaC + a.betaC));
-          const meanBuys  = newAds.map((a) => a.alphaB / (a.alphaB + a.betaB));
-          const picksSoFar = newAds.map((a) => a.chosenCount);
-          setHistory((h) => [...h, {
-            round: round + 1,
-            adIndex: idx,
-            adName: newAds[idx].name,
-            outcome,
-            cumReward: newCum,
-            meanClicks,
-            meanBuys,
-            picksSoFar,
-          }]);
-        }
-
         function pickNext() {
           const idx = nextAdIndex;
           setCurrentIndex(idx);
-          setPickCount((c) => c + 1);
+          setPickCount(c => c + 1);
           setFlash(true); setTimeout(() => setFlash(false), 500);
-          setRound((r) => r + 1);
-          setAds((prev) => prev.map((ad, i) =>
+          setRound(r => r + 1);
+          setAds(prev => prev.map((ad, i) =>
             i === idx ? { ...ad, chosenCount: ad.chosenCount + 1, shown: ad.shown + 1 } : ad
           ));
         }
@@ -143,370 +125,62 @@
         function onIgnore() {
           if (currentIndex == null) return;
           const idx = currentIndex;
-          setAds((prev) => {
-            const updated = prev.map((ad, i) =>
-              i === idx ? { ...ad, ignored: ad.ignored + 1, betaC: ad.betaC + 1, betaB: ad.betaB + 1 } : ad
-            );
-            const newCum = cumReward;
-            pushHistory(updated, idx, "ignore", newCum);
-            return updated;
-          });
+          setAds(prev => prev.map((ad, i) =>
+            i === idx ? { ...ad, ignored: ad.ignored + 1, betaC: ad.betaC + 1, betaB: ad.betaB + 1 } : ad
+          ));
         }
-
         function onClick() {
           if (currentIndex == null) return;
           const idx = currentIndex;
-          setAds((prev) => {
-            const updated = prev.map((ad, i) =>
-              i === idx ? { ...ad, clicked: ad.clicked + 1, alphaC: ad.alphaC + 1, betaB: ad.betaB + 1 } : ad
-            );
-            const reward = valueClick;
-            const newCum = cumReward + reward;
-            setCumReward(newCum);
-            pushHistory(updated, idx, "click", newCum);
-            return updated;
-          });
+          setAds(prev => prev.map((ad, i) =>
+            i === idx ? { ...ad, clicked: ad.clicked + 1, alphaC: ad.alphaC + 1, betaB: ad.betaB + 1 } : ad
+          ));
         }
-
         function onBuy() {
           if (currentIndex == null) return;
           const idx = currentIndex;
-          setAds((prev) => {
-            const updated = prev.map((ad, i) =>
-              i === idx
-                ? { ...ad, clicked: ad.clicked + 1, bought: ad.bought + 1, alphaC: ad.alphaC + 1, alphaB: ad.alphaB + 1 }
-                : ad
-            );
-            const reward = valueClick + valueBuy;
-            const newCum = cumReward + reward;
-            setCumReward(newCum);
-            pushHistory(updated, idx, "buy", newCum);
-            return updated;
-          });
-        }
-
-        function resetAll() {
-          setAds(DEFAULT_ADS.map((ad, i) => ({
-            ...ad,
-            alphaC: 1, betaC: 1, alphaB: 1, betaB: 1,
-            shown: 0, ignored: 0, clicked: 0, bought: 0, chosenCount: 0,
-            truthClick: [0.10, 0.05, 0.20][i],
-            truthBuy:   [0.02, 0.01, 0.05][i],
-          })));
-          setCurrentIndex(null);
-          setRound(0); setPickCount(0);
-          setCumReward(0); setHistory([]);
-        }
-
-        function applyImport() {
-          setAds((prev) =>
-            prev.map((ad, i) => {
-              const row = importRows[i];
-              const shown = Math.max(0, Math.floor(row.shown));
-              const clicks = Math.max(0, Math.min(shown, Math.floor(row.clicks)));
-              const buys = Math.max(0, Math.min(clicks, Math.floor(row.buys)));
-              const ignored = Math.max(0, shown - clicks);
-              return {
-                ...ad,
-                shown, clicked: clicks, bought: buys, ignored,
-                chosenCount: shown,
-                alphaC: 1 + clicks,
-                betaC: 1 + (shown - clicks),
-                alphaB: 1 + buys,
-                betaB: 1 + (shown - buys),
-              };
-            })
-          );
-          const maxShown = Math.max(...importRows.map((r) => r.shown));
-          setRound(maxShown);
-          setPickCount(maxShown);
-        }
-
-        function tsChooseIndex(local) {
-          let bestIndex = 0, bestScore = -Infinity;
-          for (let i = 0; i < local.length; i++) {
-            const ad = local[i];
-            const pClick = sampleBeta(ad.alphaC, ad.betaC);
-            const pBuy = sampleBeta(ad.alphaB, ad.betaB);
-            const score = valueClick * pClick + valueBuy * pBuy;
-            if (score > bestScore) { bestScore = score; bestIndex = i; }
-          }
-          return bestIndex;
-        }
-
-        function simulateNRounds(n) {
-          let local = ads.map(a => ({ ...a }));
-          let lastIndex = null;
-          let localCum = cumReward;
-          const newHistory = [...history];
-
-          for (let step = 0; step < n; step++) {
-            const idx = tsChooseIndex(local);
-            lastIndex = idx;
-            const ad = local[idx];
-            ad.chosenCount += 1;
-            ad.shown += 1;
-
-            const pBuy = clamp01(ad.truthBuy);
-            const pClick = Math.max(clamp01(ad.truthClick), pBuy);
-
-            const u = Math.random();
-            let outcome = "ignore";
-            if (u < pBuy) {
-              outcome = "buy";
-              ad.clicked += 1; ad.bought += 1;
-              ad.alphaC += 1; ad.alphaB += 1;
-              localCum += valueClick + valueBuy;
-            } else if (u < pClick) {
-              outcome = "click";
-              ad.clicked += 1; ad.alphaC += 1; ad.betaB += 1;
-              localCum += valueClick;
-            } else {
-              outcome = "ignore";
-              ad.ignored += 1; ad.betaC += 1; ad.betaB += 1;
-            }
-
-            const meanClicks = local.map(a => a.alphaC / (a.alphaC + a.betaC));
-            const meanBuys  = local.map(a => a.alphaB / (a.alphaB + a.betaB));
-            const picksSoFar = local.map(a => a.chosenCount);
-            newHistory.push({
-              round: round + step + 1,
-              adIndex: idx,
-              adName: local[idx].name,
-              outcome,
-              cumReward: localCum,
-              meanClicks,
-              meanBuys,
-              picksSoFar,
-            });
-          }
-
-          setAds(local);
-          setPickCount(c => c + n);
-          setRound(r => r + n);
-          setCurrentIndex(lastIndex);
-          setCumReward(localCum);
-          setHistory(newHistory);
-          setFlash(true); setTimeout(() => setFlash(false), 300);
+          setAds(prev => prev.map((ad, i) =>
+            i === idx ? { ...ad, clicked: ad.clicked + 1, bought: ad.bought + 1, alphaC: ad.alphaC + 1, alphaB: ad.alphaB + 1 } : ad
+          ));
         }
 
         const currentAd = currentIndex != null ? ads[currentIndex] : null;
 
-        const chartBeliefs = history.map(h => ({
-          round: h.round,
-          CTR_A: h.meanClicks[0], CTR_B: h.meanClicks[1], CTR_C: h.meanClicks[2],
-        }));
-        const chartCum = history.map(h => ({ round: h.round, reward: h.cumReward }));
-        const chartPicks = history.map(h => ({
-          round: h.round,
-          A: h.picksSoFar[0], B: h.picksSoFar[1], C: h.picksSoFar[2],
-        }));
-
         return (
           <div className="min-h-screen w-full bg-gray-50 text-gray-900 p-6">
-            <div className="max-w-7xl mx-auto">
-              <h1 className="text-2xl md:text-3xl font-bold mb-2">Thompson Sampling – Live Ads Optimizer</h1>
-              <p className="text-gray-600 mb-6">
-                Run manually or let the <span className="font-medium">bot</span> simulate users. Seed with past data, and view charts as learning progresses.
-              </p>
+            <div className="max-w-4xl mx-auto">
+              <h1 className="text-2xl font-bold mb-4">Thompson Sampling – Ads Optimizer</h1>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                <div className="bg-white rounded-2xl shadow p-4">
-                  <h2 className="font-semibold mb-2">1) Weights</h2>
-                  <div className="space-y-3">
-                    <label className="block text-sm">Value of a Click: {valueClick}</label>
-                    <input type="range" min={0} max={5} step={1} value={valueClick} onChange={(e) => setValueClick(parseInt(e.target.value))} className="w-full" />
-                    <label className="block text-sm">Value of a Purchase: {valueBuy}</label>
-                    <input type="range" min={0} max={10} step={1} value={valueBuy} onChange={(e) => setValueBuy(parseInt(e.target.value))} className="w-full" />
-                    <button onClick={resetAll} className="mt-2 w-full rounded-xl bg-gray-100 hover:bg-gray-200 px-3 py-2 font-medium">Reset</button>
+              <button onClick={pickNext} className="mb-4 rounded-xl px-4 py-2 bg-black text-white">Pick Next Ad</button>
+
+              {currentAd && (
+                <div className={`p-4 rounded-2xl border mb-4 ${flash ? 'ring-4 ring-blue-300 bg-blue-50' : ''}`}>
+                  <div className="text-3xl">{currentAd.emoji}</div>
+                  <div>{currentAd.name}</div>
+                  <div className="text-sm text-gray-500">Chosen: {currentAd.chosenCount} • Shown: {currentAd.shown}</div>
+                  <div className="flex gap-2 mt-2">
+                    <button onClick={onIgnore} className="rounded bg-gray-200 px-3 py-1">Ignore</button>
+                    <button onClick={onClick} className="rounded bg-blue-200 px-3 py-1">Click</button>
+                    <button onClick={onBuy} className="rounded bg-green-200 px-3 py-1">Buy</button>
                   </div>
                 </div>
+              )}
 
-                <div className="bg-white rounded-2xl shadow p-4 md:col-span-2">
-                  <h2 className="font-semibold mb-3">2) Manual Mode</h2>
-                  {currentAd ? (
-                    <div className="flex items-center gap-4">
-                      <div className={`flex-1 flex items-center gap-4 p-4 rounded-2xl border transition-all ${flash ? 'ring-4 ring-blue-300 bg-blue-50' : ''}`}>
-                        <div className="text-5xl" aria-label="ad-emoji">{currentAd.emoji}</div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <div className="text-lg font-semibold">{currentAd.name}</div>
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-black text-white">Pick #{pickCount} • Round {round}</span>
-                          </div>
-                          <div className="text-sm text-gray-500">Chosen: {currentAd.chosenCount} times • Shown: {currentAd.shown}</div>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-3 gap-2">
-                        <button onClick={onIgnore} className="rounded-xl px-3 py-2 bg-gray-100 hover:bg-gray-200 font-medium">Ignore</button>
-                        <button onClick={onClick} className="rounded-xl px-3 py-2 bg-blue-100 hover:bg-blue-200 font-medium">Click</button>
-                        <button onClick={onBuy} className="rounded-xl px-3 py-2 bg-green-100 hover:bg-green-200 font-medium">Buy</button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="p-4 rounded-2xl border text-sm text-gray-600">No ad selected yet. Click “Pick Next Ad”.</div>
-                  )}
-                  <div className="mt-3">
-                    <button onClick={pickNext} className="rounded-xl px-4 py-2 bg-black text-white hover:bg-gray-800 font-semibold">Pick Next Ad</button>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                <div className="bg-white rounded-2xl shadow p-4">
-                  <h2 className="font-semibold mb-2">3) Hidden Truths (for Bot)</h2>
-                  <p className="text-xs text-gray-500 mb-3">True CTR/CVR used by the bot to generate outcomes.</p>
-                  <div className="space-y-3">
-                    {ads.map((ad, i) => (
-                      <div key={ad.id} className="text-sm">
-                        <div className="font-medium flex items-center gap-2"><span className="text-lg">{ad.emoji}</span> {ad.name}</div>
-                        <div className="grid grid-cols-2 gap-2 mt-1">
-                          <label className="flex items-center gap-2">
-                            <span className="w-16 text-gray-500">CTR</span>
-                            <input type="number" step="0.01" min="0" max="1" value={ad.truthClick}
-                              onChange={(e) => {
-                                const v = clamp01(parseFloat(e.target.value));
-                                setAds((prev) => prev.map((x, idx) => (idx === i ? { ...x, truthClick: v } : x)));
-                              }} className="w-full border rounded px-2 py-1" />
-                          </label>
-                          <label className="flex items-center gap-2">
-                            <span className="w-16 text-gray-500">CVR</span>
-                            <input type="number" step="0.01" min="0" max="1" value={ad.truthBuy}
-                              onChange={(e) => {
-                                const v = clamp01(parseFloat(e.target.value));
-                                setAds((prev) => prev.map((x, idx) => (idx === i ? { ...x, truthBuy: v } : x)));
-                              }} className="w-full border rounded px-2 py-1" />
-                          </label>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="bg-white rounded-2xl shadow p-4 md:col-span-2">
-                  <h2 className="font-semibold mb-3">4) Bot Simulator</h2>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button onClick={() => simulateNRounds(10)} className="rounded-xl px-3 py-2 bg-gray-100 hover:bg-gray-200 font-medium">Run 10</button>
-                    <button onClick={() => simulateNRounds(100)} className="rounded-xl px-3 py-2 bg-gray-100 hover:bg-gray-200 font-medium">Run 100</button>
-                    <button onClick={() => simulateNRounds(1000)} className="rounded-xl px-3 py-2 bg-gray-100 hover:bg-gray-200 font-medium">Run 1000</button>
-                    <span className="text-xs text-gray-500 ml-2">Instant simulation — updates stats immediately.</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                <div className="bg-white rounded-2xl shadow p-4">
-                  <h2 className="font-semibold mb-2">5) Import Previous Data</h2>
-                  <p className="text-xs text-gray-500 mb-3">Enter your past counts per ad (Shown, Clicks, Buys). We convert them into Beta priors automatically.</p>
-                  <div className="space-y-3">
-                    {importRows.map((row, i) => (
-                      <div key={i} className="text-sm">
-                        <div className="font-medium flex items-center gap-2"><span className="text-lg">{ads[i].emoji}</span> {ads[i].name}</div>
-                        <div className="grid grid-cols-3 gap-2 mt-1">
-                          <label className="flex items-center gap-2">
-                            <span className="w-16 text-gray-500">Shown</span>
-                            <input type="number" min="0" value={row.shown}
-                              onChange={(e) => {
-                                const v = Math.max(0, parseInt(e.target.value || "0"));
-                                setImportRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, shown: v } : r)));
-                              }} className="w-full border rounded px-2 py-1" />
-                          </label>
-                          <label className="flex items-center gap-2">
-                            <span className="w-16 text-gray-500">Clicks</span>
-                            <input type="number" min="0" value={row.clicks}
-                              onChange={(e) => {
-                                const v = Math.max(0, parseInt(e.target.value || "0"));
-                                setImportRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, clicks: v } : r)));
-                              }} className="w-full border rounded px-2 py-1" />
-                          </label>
-                          <label className="flex items-center gap-2">
-                            <span className="w-16 text-gray-500">Buys</span>
-                            <input type="number" min="0" value={row.buys}
-                              onChange={(e) => {
-                                const v = Math.max(0, parseInt(e.target.value || "0"));
-                                setImportRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, buys: v } : r)));
-                              }} className="w-full border rounded px-2 py-1" />
-                          </label>
-                        </div>
-                      </div>
-                    ))}
-                    <div className="flex gap-2">
-                      <button onClick={applyImport} className="rounded-xl px-3 py-2 bg-gray-100 hover:bg-gray-200 font-medium">Apply Seed Data</button>
-                      <button onClick={() => setImportRows(DEFAULT_ADS.map(() => ({ shown: 0, clicks: 0, buys: 0 })))} className="rounded-xl px-3 py-2 bg-gray-100 hover:bg-gray-200 font-medium">Clear Inputs</button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bg-white rounded-2xl shadow p-4 md:col-span-2">
-                  <h2 className="font-semibold mb-3">6) Charts</h2>
-                  <div className="space-y-6">
-                    <div className="w-full h-64">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={chartCum} margin={{ top: 10, right: 20, bottom: 0, left: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="round" />
-                          <YAxis />
-                          <Tooltip />
-                          <Legend />
-                          <Line type="monotone" dataKey="reward" name="Cumulative Reward" strokeWidth={2} dot={false} />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-
-                    <div className="w-full h-64">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={chartPicks} margin={{ top: 10, right: 20, bottom: 0, left: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="round" />
-                          <YAxis />
-                          <Tooltip />
-                          <Legend />
-                          <Line type="monotone" dataKey="A" name="Picks – Ad A" strokeWidth={2} dot={false} />
-                          <Line type="monotone" dataKey="B" name="Picks – Ad B" strokeWidth={2} dot={false} />
-                          <Line type="monotone" dataKey="C" name="Picks – Ad C" strokeWidth={2} dot={false} />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-
-                    <div className="w-full h-64">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={history.map(h => ({ round: h.round, CTR_A: h.meanClicks[0], CTR_B: h.meanClicks[1], CTR_C: h.meanClicks[2] }))} margin={{ top: 10, right: 20, bottom: 0, left: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="round" />
-                          <YAxis domain={[0, 1]} />
-                          <Tooltip />
-                          <Legend />
-                          <Line type="monotone" dataKey="CTR_A" name="CTR mean – A" strokeWidth={2} dot={false} />
-                          <Line type="monotone" dataKey="CTR_B" name="CTR mean – B" strokeWidth={2} dot={false} />
-                          <Line type="monotone" dataKey="CTR_C" name="CTR mean – C" strokeWidth={2} dot={false} />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <h2 className="font-semibold mb-2">7) Live Metrics & Beliefs (current)</h2>
+              <h2 className="font-semibold mb-2">Stats</h2>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {ads.map((ad) => {
+                {ads.map(ad => {
                   const meanClick = ad.alphaC / (ad.alphaC + ad.betaC);
                   const meanBuy = ad.alphaB / (ad.alphaB + ad.betaB);
                   const ev = valueClick * meanClick + valueBuy * meanBuy;
                   return (
-                    <div key={ad.id} className="bg-white rounded-2xl shadow p-4">
-                      <div className="flex items-center gap-3 mb-2">
-                        <div className="text-3xl">{ad.emoji}</div>
-                        <div className="font-semibold">{ad.name}</div>
-                      </div>
-                      <div className="h-2 bg-gray-100 rounded-full overflow-hidden mb-3">
-                        <div className="h-full bg-black" style={{ width: `${Math.min(100, ev * 100)}%` }} />
-                      </div>
+                    <div key={ad.id} className="bg-white rounded-xl shadow p-4">
+                      <div className="text-lg font-semibold mb-2">{ad.name}</div>
                       <Stat label="Shown" value={ad.shown} />
-                      <Stat label="Ignored" value={ad.ignored} />
                       <Stat label="Clicks" value={ad.clicked} />
-                      <Stat label="Purchases" value={ad.bought} />
+                      <Stat label="Buys" value={ad.bought} />
                       <div className="border-t my-2" />
-                      <Stat label="CTR belief (mean)" value={formatPct(meanClick)} />
-                      <Stat label="CVR belief (mean)" value={formatPct(meanBuy)} />
+                      <Stat label="CTR belief" value={formatPct(meanClick)} />
+                      <Stat label="CVR belief" value={formatPct(meanBuy)} />
                       <Stat label="Expected Value" value={ev.toFixed(2)} />
                     </div>
                   );
@@ -517,8 +191,13 @@
         );
       }
 
-      const root = ReactDOM.createRoot(document.getElementById("root"));
-      root.render(<ThompsonAdsDemo />);
+      // Mount React
+      const container = document.getElementById("root");
+      if (ReactDOM.createRoot) {
+        ReactDOM.createRoot(container).render(<ThompsonAdsDemo />);
+      } else {
+        ReactDOM.render(<ThompsonAdsDemo />, container);
+      }
     </script>
   </body>
 </html>
